@@ -32,7 +32,7 @@ describe('MultiSigWallet', function () {
         );
     });
 
-    describe('setting up', () => {
+    describe('Setting up', () => {
         it('Check signatories addresses', async function () {
             expect(await multiSigWallet.isOwner(signatories[0].address)).to.be
                 .true;
@@ -48,7 +48,6 @@ describe('MultiSigWallet', function () {
         });
         it('send 10 ether to the wallet', async () => {
             const tenEth = ethers.utils.parseEther('10');
-            const funderBal = await funder.getBalance();
             // send 1 ETH to wallet
             const tx = await multiSigWallet.connect(funder).deposit({
                 from: funder.address,
@@ -160,16 +159,23 @@ describe('MultiSigWallet', function () {
 
     context('Submit, Revoke confirmation of a Transaction', () => {
         const txIndex = ethers.BigNumber.from(1);
-        const sixtyNineEther = ethers.utils.parseEther('69');
-        describe('submit another transaction', () => {
+        const nineEther = ethers.utils.parseEther('9');
+        describe('submit a new transaction', () => {
             it('SubmitTransaction should be emitted', async () => {
                 const tx = await multiSigWallet
                     .connect(signatories[0])
-                    .submitTransaction(recipient.address, sixtyNineEther, '0x');
+                    .submitTransaction(recipient.address, nineEther, '0x');
                 expect(tx)
                     .to.be.emit(multiSigWallet, 'SubmitTransaction')
-                    .withArgs(signatories[0].address, sixtyNineEther, '0x');
-                // at this point we should have 2 transactions
+                    .withArgs(
+                        signatories[0].address, // msg.sender
+                        txIndex, // trnsaction index
+                        recipient.address, // to
+                        nineEther, // value
+                        '0x', // data
+                    );
+            });
+            it('transaction count equal 2', async () => {
                 expect(await multiSigWallet.getTransactionCount()).equal(
                     ethers.BigNumber.from(2),
                 );
@@ -217,6 +223,38 @@ describe('MultiSigWallet', function () {
                         .connect(nonSignatory)
                         .revokeConfirmation(txIndex),
                 ).to.be.revertedWith('not owner');
+            });
+            it('executeTransaction will be reverted when numConfirmation is 1', async () => {
+                await expect(
+                    multiSigWallet
+                        .connect(signatories[0])
+                        .executeTransaction(txIndex),
+                ).to.be.revertedWith('cannot execute tx');
+            });
+        });
+
+        describe('Re-confirm the transaction and execute', () => {
+            it('numConfirmation is now back to 2', async () => {
+                // confirm by the third owner/signatory
+                await multiSigWallet
+                    .connect(signatories[2])
+                    .confirmTransaction(txIndex);
+                const transaction = await multiSigWallet.getTransaction(
+                    txIndex,
+                );
+                expect(transaction[4]).equal(ethers.BigNumber.from(2));
+            });
+            it('executeTransaction emit ExecuteTransaction event', async () => {
+                await multiSigWallet
+                    .connect(signatories[0])
+                    .executeTransaction(txIndex);
+            });
+            it('executeTransaction should be reverted if transaction already executed', async () => {
+                await expect(
+                    multiSigWallet
+                        .connect(signatories[0])
+                        .executeTransaction(txIndex),
+                ).to.be.revertedWith('tx already executed');
             });
         });
     });
